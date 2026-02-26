@@ -14,6 +14,7 @@ import {
   loadConfig,
   createPluginRegistry,
   createSessionManager,
+  createTelegramHandler,
   type OrchestratorConfig,
   type PluginRegistry,
   type SessionManager,
@@ -25,6 +26,7 @@ import {
   WARDEN_DEFAULTS,
   type LifecycleManager,
   type Warden,
+  type TelegramHandler,
 } from "@composio/ao-core";
 
 // Static plugin imports — webpack needs these to be string literals
@@ -41,6 +43,7 @@ export interface Services {
   sessionManager: SessionManager;
   lifecycleManager: LifecycleManager;
   warden: Warden | null;
+  telegramHandler: TelegramHandler | null;
 }
 
 // Cache in globalThis for Next.js HMR stability
@@ -97,7 +100,23 @@ async function initServices(): Promise<Services> {
   const tickInterval = config.warden?.tickIntervalMs ?? 30_000;
   lifecycleManager.start(tickInterval);
 
-  const services = { config, registry, sessionManager, lifecycleManager, warden };
+  // Start Telegram command handler
+  let telegramHandler: TelegramHandler | null = null;
+  const telegramConfig = config.notifiers?.telegram as Record<string, unknown> | undefined;
+  const tgBotToken = (telegramConfig?.botToken as string) || process.env["TELEGRAM_BOT_TOKEN"] || "";
+  const tgChatId = (telegramConfig?.chatId as string) || process.env["TELEGRAM_CHAT_ID"] || "";
+  if (tgBotToken && tgChatId) {
+    telegramHandler = createTelegramHandler({
+      botToken: tgBotToken,
+      chatId: tgChatId,
+      warden,
+      sessionManager,
+      config,
+    });
+    telegramHandler.start();
+  }
+
+  const services = { config, registry, sessionManager, lifecycleManager, warden, telegramHandler };
   globalForServices._aoServices = services;
   return services;
 }
@@ -107,4 +126,3 @@ export function getSCM(registry: PluginRegistry, project: ProjectConfig | undefi
   if (!project?.scm) return null;
   return registry.get<SCM>("scm", project.scm.plugin);
 }
-

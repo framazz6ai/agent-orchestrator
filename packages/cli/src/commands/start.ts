@@ -18,10 +18,12 @@ import {
   createLifecycleManager,
   createWarden,
   createResourceMonitor,
+  createTelegramHandler,
   WARDEN_DEFAULTS,
   type OrchestratorConfig,
   type ProjectConfig,
   type LifecycleManager,
+  type TelegramHandler,
 } from "@composio/ao-core";
 import { exec } from "../lib/shell.js";
 import { getSessionManager, getPluginRegistry } from "../lib/create-session-manager.js";
@@ -123,6 +125,15 @@ async function stopDashboard(port: number): Promise<void> {
 
 // Module-level lifecycle manager reference (for stop command cleanup)
 let activeLifecycle: LifecycleManager | null = null;
+let activeTelegramHandler: TelegramHandler | null = null;
+
+/** Extract Telegram bot config from OrchestratorConfig notifiers */
+function getTelegramConfig(config: OrchestratorConfig): { botToken: string; chatId: string } {
+  const telegramConfig = config.notifiers?.telegram as Record<string, unknown> | undefined;
+  const botToken = (telegramConfig?.botToken as string) || process.env["TELEGRAM_BOT_TOKEN"] || "";
+  const chatId = (telegramConfig?.chatId as string) || process.env["TELEGRAM_CHAT_ID"] || "";
+  return { botToken, chatId };
+}
 
 export function registerStart(program: Command): void {
   program
@@ -246,6 +257,25 @@ export function registerStart(program: Command): void {
             if (warden) {
               console.log(chalk.green("Traffic Warden active") + chalk.dim(` (max ${config.warden?.maxConcurrentSessions ?? 3} concurrent sessions)`));
             }
+
+            // --- Start Telegram command handler ---
+            try {
+              const { botToken, chatId } = getTelegramConfig(config);
+              if (botToken && chatId) {
+                const tgHandler = createTelegramHandler({
+                  botToken,
+                  chatId,
+                  warden: warden ?? null,
+                  sessionManager: sm,
+                  config,
+                });
+                tgHandler.start();
+                activeTelegramHandler = tgHandler;
+                console.log(chalk.green("Telegram command handler started") + chalk.dim(` (chat ${chatId})`));
+              }
+            } catch (err) {
+              console.error(chalk.yellow("Warning: Telegram handler failed to start:"), err instanceof Error ? err.message : String(err));
+            }
           } catch (err) {
             console.error(chalk.yellow("Warning: lifecycle manager failed to start:"), err instanceof Error ? err.message : String(err));
           }
@@ -271,6 +301,11 @@ export function registerStart(program: Command): void {
               if (activeLifecycle) {
                 activeLifecycle.stop();
                 activeLifecycle = null;
+              }
+              // Stop telegram handler on exit
+              if (activeTelegramHandler) {
+                activeTelegramHandler.stop();
+                activeTelegramHandler = null;
               }
               if (code !== 0 && code !== null) {
                 console.error(chalk.red(`Dashboard exited with code ${code}`));
@@ -328,6 +363,13 @@ export function registerStop(program: Command): void {
           activeLifecycle.stop();
           activeLifecycle = null;
           console.log(chalk.green("Lifecycle manager stopped"));
+        }
+
+        // Stop telegram handler if running
+        if (activeTelegramHandler) {
+          activeTelegramHandler.stop();
+          activeTelegramHandler = null;
+          console.log(chalk.green("Telegram command handler stopped"));
         }
 
         console.log(chalk.bold.green("\n✓ Orchestrator stopped\n"));

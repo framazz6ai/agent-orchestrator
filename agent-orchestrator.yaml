@@ -1,7 +1,7 @@
 # Workspace 2.0 — Agent Orchestrator Configuration
 # Aria (WSL2) is the primary execution environment
 
-port: 3000
+port: 3100
 
 defaults:
   runtime: tmux

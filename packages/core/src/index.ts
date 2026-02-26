@@ -100,3 +100,7 @@ export type {
   ResourceStatus,
   DiscoverProject,
 } from "./warden-types.js";
+
+// Telegram command handler
+export { createTelegramHandler } from "./telegram-handler.js";
+export type { TelegramHandler, TelegramHandlerDeps } from "./telegram-handler.js";

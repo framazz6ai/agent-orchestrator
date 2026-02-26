@@ -40,6 +40,14 @@ async function getRegistry(config: OrchestratorConfig): Promise<PluginRegistry> 
  * Create a SessionManager backed by core's implementation.
  * Initializes the plugin registry from config and wires everything up.
  */
+/**
+ * Get the plugin registry (creating it if needed).
+ * Exported so ao start can pass it to the lifecycle manager.
+ */
+export async function getPluginRegistry(config: OrchestratorConfig): Promise<PluginRegistry> {
+  return getRegistry(config);
+}
+
 export async function getSessionManager(config: OrchestratorConfig): Promise<SessionManager> {
   const registry = await getRegistry(config);
   return createSessionManager({ config, registry });

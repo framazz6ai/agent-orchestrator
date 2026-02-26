@@ -15,11 +15,16 @@ import type { Command } from "commander";
 import {
   loadConfig,
   generateOrchestratorPrompt,
+  createLifecycleManager,
+  createWarden,
+  createResourceMonitor,
+  WARDEN_DEFAULTS,
   type OrchestratorConfig,
   type ProjectConfig,
+  type LifecycleManager,
 } from "@composio/ao-core";
 import { exec } from "../lib/shell.js";
-import { getSessionManager } from "../lib/create-session-manager.js";
+import { getSessionManager, getPluginRegistry } from "../lib/create-session-manager.js";
 import { findWebDir, buildDashboardEnv } from "../lib/web-dir.js";
 import { cleanNextCache } from "../lib/dashboard-rebuild.js";
 
@@ -116,6 +121,9 @@ async function stopDashboard(port: number): Promise<void> {
   }
 }
 
+// Module-level lifecycle manager reference (for stop command cleanup)
+let activeLifecycle: LifecycleManager | null = null;
+
 export function registerStart(program: Command): void {
   program
     .command("start [project]")
@@ -210,6 +218,38 @@ export function registerStart(program: Command): void {
           }
 
           // Print summary based on what was actually started
+
+          // --- Start lifecycle manager with Traffic Warden ---
+          try {
+            const registry = await getPluginRegistry(config);
+            const sm = await getSessionManager(config);
+
+            // Create warden if configured
+            let warden;
+            if (config.warden) {
+              const resourceMonitor = createResourceMonitor();
+              const wardenConfig = { ...WARDEN_DEFAULTS, ...config.warden };
+              warden = createWarden({ config: wardenConfig, sessionManager: sm, resourceMonitor });
+            }
+
+            // Create and start lifecycle manager
+            activeLifecycle = createLifecycleManager({
+              config,
+              registry,
+              sessionManager: sm,
+              warden,
+            });
+
+            const tickInterval = config.warden?.tickIntervalMs ?? 30_000;
+            activeLifecycle.start(tickInterval);
+            console.log(chalk.green("Lifecycle manager started") + chalk.dim(` (polling every ${tickInterval / 1000}s)`));
+            if (warden) {
+              console.log(chalk.green("Traffic Warden active") + chalk.dim(` (max ${config.warden?.maxConcurrentSessions ?? 3} concurrent sessions)`));
+            }
+          } catch (err) {
+            console.error(chalk.yellow("Warning: lifecycle manager failed to start:"), err instanceof Error ? err.message : String(err));
+          }
+
           console.log(chalk.bold.green("\n✓ Startup complete\n"));
 
           if (opts?.dashboard !== false) {
@@ -227,6 +267,11 @@ export function registerStart(program: Command): void {
           // Keep dashboard process alive if it was started
           if (dashboardProcess) {
             dashboardProcess.on("exit", (code) => {
+              // Stop lifecycle manager on exit
+              if (activeLifecycle) {
+                activeLifecycle.stop();
+                activeLifecycle = null;
+              }
               if (code !== 0 && code !== null) {
                 console.error(chalk.red(`Dashboard exited with code ${code}`));
               }
@@ -277,6 +322,13 @@ export function registerStop(program: Command): void {
 
         // Stop dashboard
         await stopDashboard(port);
+
+        // Stop lifecycle manager if running
+        if (activeLifecycle) {
+          activeLifecycle.stop();
+          activeLifecycle = null;
+          console.log(chalk.green("Lifecycle manager stopped"));
+        }
 
         console.log(chalk.bold.green("\n✓ Orchestrator stopped\n"));
       } catch (err) {

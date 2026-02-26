@@ -19,6 +19,12 @@ import {
   type SessionManager,
   type SCM,
   type ProjectConfig,
+  createLifecycleManager,
+  createWarden,
+  createResourceMonitor,
+  WARDEN_DEFAULTS,
+  type LifecycleManager,
+  type Warden,
 } from "@composio/ao-core";
 
 // Static plugin imports — webpack needs these to be string literals
@@ -33,6 +39,8 @@ export interface Services {
   config: OrchestratorConfig;
   registry: PluginRegistry;
   sessionManager: SessionManager;
+  lifecycleManager: LifecycleManager;
+  warden: Warden | null;
 }
 
 // Cache in globalThis for Next.js HMR stability
@@ -71,7 +79,25 @@ async function initServices(): Promise<Services> {
 
   const sessionManager = createSessionManager({ config, registry });
 
-  const services = { config, registry, sessionManager };
+  // Create warden if configured
+  let warden: Warden | null = null;
+  if (config.warden) {
+    const resourceMonitor = createResourceMonitor();
+    const wardenConfig = { ...WARDEN_DEFAULTS, ...config.warden };
+    warden = createWarden({ config: wardenConfig, sessionManager, resourceMonitor });
+  }
+
+  // Create and start lifecycle manager with warden
+  const lifecycleManager = createLifecycleManager({
+    config,
+    registry,
+    sessionManager,
+    warden: warden ?? undefined,
+  });
+  const tickInterval = config.warden?.tickIntervalMs ?? 30_000;
+  lifecycleManager.start(tickInterval);
+
+  const services = { config, registry, sessionManager, lifecycleManager, warden };
   globalForServices._aoServices = services;
   return services;
 }

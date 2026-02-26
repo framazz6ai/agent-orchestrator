@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import ora from "ora";
 import type { Command } from "commander";
-import { loadConfig, type OrchestratorConfig } from "@composio/ao-core";
+import { loadConfig, type OrchestratorConfig, createWarden, createResourceMonitor, WARDEN_DEFAULTS } from "@composio/ao-core";
 import { exec } from "../lib/shell.js";
 import { banner } from "../lib/format.js";
 import { getSessionManager } from "../lib/create-session-manager.js";
@@ -61,7 +61,8 @@ export function registerSpawn(program: Command): void {
     .argument("[issue]", "Issue identifier (e.g. INT-1234, #42) - must exist in tracker")
     .option("--open", "Open session in terminal tab")
     .option("--agent <name>", "Override the agent plugin (e.g. codex, claude-code)")
-    .action(async (projectId: string, issueId: string | undefined, opts: { open?: boolean; agent?: string }) => {
+    .option("--immediate", "Bypass warden queue and spawn directly")
+    .action(async (projectId: string, issueId: string | undefined, opts: { open?: boolean; agent?: string; immediate?: boolean }) => {
       const config = loadConfig();
       if (!config.projects[projectId]) {
         console.error(
@@ -73,7 +74,23 @@ export function registerSpawn(program: Command): void {
       }
 
       try {
-        await spawnSession(config, projectId, issueId, opts.open, opts.agent);
+        // When warden is configured and --immediate not set, enqueue instead
+        if (config.warden && !opts.immediate) {
+          const sm = await getSessionManager(config);
+          const resourceMonitor = createResourceMonitor();
+          const wardenConfig = { ...WARDEN_DEFAULTS, ...config.warden };
+          const warden = createWarden({ config: wardenConfig, sessionManager: sm, resourceMonitor });
+          const queueId = warden.enqueue({
+            projectId,
+            issueId,
+            agent: opts.agent,
+          });
+          console.log(chalk.green("Enqueued"), `as ${chalk.dim(queueId.slice(0, 8))}`);
+          console.log(chalk.dim("  Priority: normal | Use --immediate to bypass queue"));
+          console.log(chalk.dim("  Run `ao status` to see queue position"));
+        } else {
+          await spawnSession(config, projectId, issueId, opts.open, opts.agent);
+        }
       } catch (err) {
         console.error(chalk.red(`✗ ${err}`));
         process.exit(1);

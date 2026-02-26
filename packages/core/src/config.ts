@@ -88,6 +88,25 @@ const DefaultPluginsSchema = z.object({
   notifiers: z.array(z.string()).default(["composio", "desktop"]),
 });
 
+const WardenResourceThresholdsSchema = z.object({
+  minFreeRamMB: z.number().default(2048),
+  maxCpuLoad: z.number().default(0.85),
+  minFreeDiskGB: z.number().default(10),
+});
+
+const WardenPriorityWeightsSchema = z.object({
+  manualPriority: z.number().default(3.0),
+  completionCloseness: z.number().default(1.5),
+  resourceCost: z.number().default(1.0),
+});
+
+const WardenConfigSchema = z.object({
+  maxConcurrentSessions: z.number().default(3),
+  resourceThresholds: WardenResourceThresholdsSchema.default({}),
+  priorityWeights: WardenPriorityWeightsSchema.default({}),
+  tickIntervalMs: z.number().default(30_000),
+});
+
 const OrchestratorConfigSchema = z.object({
   port: z.number().default(3000),
   terminalPort: z.number().optional(),
@@ -103,6 +122,7 @@ const OrchestratorConfigSchema = z.object({
     info: ["composio"],
   }),
   reactions: z.record(ReactionConfigSchema).default({}),
+  warden: WardenConfigSchema.optional(),
 });
 
 // =============================================================================

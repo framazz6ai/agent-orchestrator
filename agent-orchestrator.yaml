@@ -1,28 +1,86 @@
-# Agent Orchestrator — self-hosting config (dog-fooding)
+# Workspace 2.0 — Agent Orchestrator Configuration
+# Aria (WSL2) is the primary execution environment
 
-dataDir: ~/.ao-sessions
-worktreeDir: ~/.worktrees/ao
+port: 3000
 
 defaults:
   runtime: tmux
   agent: claude-code
   workspace: worktree
-  notifiers: [desktop]
+  notifiers:
+    - telegram
 
+# Notification routing by priority
+notificationRouting:
+  urgent:
+    - telegram
+  action:
+    - telegram
+  warning:
+    - telegram
+  info:
+    - telegram
+
+# Notifier configurations
+notifiers:
+  telegram:
+    plugin: telegram
+    botToken: "8779934076:AAG7PB3b1zmOKkQLCBuSlMMhChMj5lI_EuE"
+    chatId: "1316861572"
+
+# Default reactions
+reactions:
+  ci-failed:
+    auto: true
+    action: send-to-agent
+    message: "CI is failing on your PR. Run `gh pr checks` to see the failures, fix them, and push."
+    retries: 2
+    escalateAfter: 2
+  changes-requested:
+    auto: true
+    action: send-to-agent
+    message: "There are review comments on your PR. Address each one, push fixes, and reply."
+    escalateAfter: "30m"
+  approved-and-green:
+    auto: false
+    action: notify
+    priority: action
+  agent-stuck:
+    auto: true
+    action: notify
+    priority: urgent
+  agent-needs-input:
+    auto: true
+    action: notify
+    priority: urgent
+  agent-exited:
+    auto: true
+    action: notify
+    priority: urgent
+  all-complete:
+    auto: true
+    action: notify
+    priority: info
+    includeSummary: true
+
+# Projects — starting with beacon (top priority)
 projects:
-  ao:
-    name: Agent Orchestrator
-    repo: ComposioHQ/agent-orchestrator
-    path: ~/agent-orchestrator
-    defaultBranch: main
-    sessionPrefix: ao
+  beacon:
+    repo: framazz6ai/beacon
+    path: ~/workspace/projects/beacon
+    defaultBranch: master
     scm:
       plugin: github
     tracker:
-      plugin: linear
-      teamId: "2a6e9b1b-19cd-4e30-b5bd-7b34dc491c7e"
-    symlinks: [.claude]
-    postCreate:
-      - "pnpm install"
+      plugin: github
     agentConfig:
       permissions: skip
+
+# Traffic Warden — Priority Scheduler
+warden:
+  maxConcurrentSessions: 3
+  resourceThresholds:
+    minFreeRamMB: 2048
+    maxCpuLoad: 0.85
+    minFreeDiskGB: 10
+  tickIntervalMs: 30000

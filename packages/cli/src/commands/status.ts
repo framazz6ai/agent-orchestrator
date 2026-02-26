@@ -9,6 +9,9 @@ import {
   type ReviewDecision,
   type ActivityState,
   loadConfig,
+  createResourceMonitor,
+  WARDEN_DEFAULTS,
+  type QueueItem,
 } from "@composio/ao-core";
 import { git, getTmuxSessions, getTmuxActivity } from "../lib/shell.js";
 import {
@@ -186,6 +189,49 @@ function printSessionRow(info: SessionInfo): void {
   }
 }
 
+
+// Priority display helpers for warden queue
+const PRIORITY_COLORS: Record<string, (s: string) => string> = {
+  urgent: chalk.red,
+  high: chalk.yellow,
+  normal: chalk.white,
+  low: chalk.dim,
+};
+
+function _formatQueueItem(item: QueueItem, index: number): string {
+  const colorFn = PRIORITY_COLORS[item.priority] ?? chalk.white;
+  const status = item.status === "pending" ? chalk.dim("queued")
+    : item.status === "spawning" ? chalk.yellow("spawning")
+    : item.status === "active" ? chalk.green("active")
+    : chalk.dim(item.status);
+  const issue = item.issueId ? chalk.dim(` ${item.issueId}`) : "";
+  const score = chalk.dim(` (score: ${item.score.toFixed(1)})`);
+  return `  ${chalk.dim(`${index + 1}.`)} ${colorFn(item.priority.padEnd(7))} ${item.projectId}${issue} ${status}${score}`;
+}
+
+async function showWardenStatus(config: ReturnType<typeof loadConfig>): Promise<void> {
+  if (!config.warden) return;
+
+  const wardenConfig = { ...WARDEN_DEFAULTS, ...config.warden };
+  const resourceMonitor = createResourceMonitor();
+  const resources = resourceMonitor.getStatus(wardenConfig);
+
+  console.log(header("Resources"));
+  const cpuColor = resources.cpuLoad > wardenConfig.resourceThresholds.maxCpuLoad ? chalk.red : chalk.green;
+  const ramColor = resources.ramFreeMB < wardenConfig.resourceThresholds.minFreeRamMB ? chalk.red : chalk.green;
+  const diskColor = resources.diskFreeGB < wardenConfig.resourceThresholds.minFreeDiskGB ? chalk.red : chalk.green;
+
+  console.log(`  CPU:  ${cpuColor(`${(resources.cpuLoad * 100).toFixed(0)}%`)} load`);
+  console.log(`  RAM:  ${ramColor(`${resources.ramFreeMB}MB`)} free / ${resources.ramTotalMB}MB`);
+  console.log(`  Disk: ${diskColor(`${resources.diskFreeGB}GB`)} free / ${resources.diskTotalGB}GB`);
+  console.log(`  Sessions: ${resources.activeSessions} active / ${wardenConfig.maxConcurrentSessions} max`);
+
+  if (!resources.canSpawnMore && resources.reason) {
+    console.log(`  \u26a0 ${chalk.yellow(resources.reason)}`);
+  }
+  console.log();
+}
+
 export function registerStatus(program: Command): void {
   program
     .command("status")
@@ -281,6 +327,9 @@ export function registerStatus(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify(jsonOutput, null, 2));
       } else {
+        // Show warden resource status if configured
+        await showWardenStatus(config);
+
         console.log(
           chalk.dim(
             `  ${totalSessions} active session${totalSessions !== 1 ? "s" : ""} across ${projectIds.length} project${projectIds.length !== 1 ? "s" : ""}`,

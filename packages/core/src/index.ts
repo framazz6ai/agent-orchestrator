@@ -79,3 +79,23 @@ export {
   expandHome,
   validateAndStoreOrigin,
 } from "./paths.js";
+
+// Warden - Traffic Warden priority scheduler
+export { createWarden } from "./warden.js";
+export type { WardenDeps } from "./warden.js";
+
+// Resource monitor - system health checker
+export { createResourceMonitor } from "./resource-monitor.js";
+export type { ResourceMonitor } from "./resource-monitor.js";
+
+// Warden types (also re-exported from types.ts)
+export { WARDEN_DEFAULTS } from "./warden-types.js";
+export type {
+  Warden,
+  WardenConfig,
+  QueueItem,
+  QueueInput,
+  QueuePriority,
+  QueueItemStatus,
+  ResourceStatus,
+} from "./warden-types.js";

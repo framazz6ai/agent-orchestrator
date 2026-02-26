@@ -825,6 +825,9 @@ export interface OrchestratorConfig {
 
   /** Default reaction configs */
   reactions: Record<string, ReactionConfig>;
+
+  /** Traffic Warden scheduler configuration */
+  warden?: import('./warden-types.js').WardenConfig;
 }
 
 export interface DefaultPlugins {
@@ -1084,3 +1087,20 @@ export class WorkspaceMissingError extends Error {
     this.name = "WorkspaceMissingError";
   }
 }
+
+
+// =============================================================================
+// WARDEN (Traffic Warden — Priority Scheduler)
+// =============================================================================
+
+export type {
+  Warden,
+  WardenConfig,
+  QueueItem,
+  QueueInput,
+  QueuePriority,
+  QueueItemStatus,
+  ResourceStatus,
+} from './warden-types.js';
+
+export { WARDEN_DEFAULTS } from './warden-types.js';

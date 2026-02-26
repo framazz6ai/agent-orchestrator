@@ -160,6 +160,7 @@ export interface LifecycleManagerDeps {
   config: OrchestratorConfig;
   registry: PluginRegistry;
   sessionManager: SessionManager;
+  warden?: import("./warden-types.js").Warden;
 }
 
 /** Track attempt counts for reactions per session. */
@@ -171,6 +172,7 @@ interface ReactionTracker {
 /** Create a LifecycleManager instance. */
 export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleManager {
   const { config, registry, sessionManager } = deps;
+  const warden = deps.warden;
 
   const states = new Map<SessionId, SessionStatus>();
   const reactionTrackers = new Map<string, ReactionTracker>(); // "sessionId:reactionKey"
@@ -446,6 +448,15 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       // State transition detected
       states.set(session.id, newStatus);
 
+      // Feed completion data to warden
+      if (warden) {
+        if (newStatus === "merged" || newStatus === "done") {
+          warden.markCompleted(session.id);
+        } else if (newStatus === "killed" || newStatus === "errored" || newStatus === "terminated") {
+          warden.markFailed(session.id);
+        }
+      }
+
       // Update metadata — session.projectId is the config key (e.g., "my-app")
       const project = config.projects[session.projectId];
       if (project) {
@@ -553,6 +564,15 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         const sessionId = trackerKey.split(":")[0];
         if (sessionId && !currentSessionIds.has(sessionId)) {
           reactionTrackers.delete(trackerKey);
+        }
+      }
+
+      // --- Traffic Warden: run scheduler tick ---
+      if (warden) {
+        try {
+          await warden.tick();
+        } catch {
+          // Warden tick failed - will retry next interval
         }
       }
 

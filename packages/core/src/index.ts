@@ -98,4 +98,5 @@ export type {
   QueuePriority,
   QueueItemStatus,
   ResourceStatus,
+  DiscoverProject,
 } from "./warden-types.js";

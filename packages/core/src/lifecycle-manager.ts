@@ -32,6 +32,7 @@ import {
   type Session,
   type EventPriority,
   type ProjectConfig as _ProjectConfig,
+  type Tracker,
 } from "./types.js";
 import { updateMetadata } from "./metadata.js";
 import { getSessionsDir } from "./paths.js";
@@ -570,6 +571,36 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       // --- Traffic Warden: run scheduler tick ---
       if (warden) {
         try {
+          // Auto-discover open issues from trackers and enqueue them
+          const discoverProjects = [];
+          for (const [projectId, project] of Object.entries(config.projects)) {
+            if (project.tracker) {
+              const tracker = registry.get<Tracker>("tracker", project.tracker.plugin);
+              if (tracker?.listIssues) {
+                // Gather active issue IDs for this project
+                const projectSessions = sessions.filter(
+                  (s) => s.projectId === projectId && s.status !== "merged" && s.status !== "killed",
+                );
+                const activeIssueIds = new Set(
+                  projectSessions.map((s) => s.issueId).filter(Boolean) as string[],
+                );
+
+                const t = tracker;
+                const p = project;
+                discoverProjects.push({
+                  projectId,
+                  listIssues: (filters: { state: string; labels?: string[]; limit?: number }) =>
+                    t.listIssues!(filters as any, p),
+                  activeIssueIds,
+                });
+              }
+            }
+          }
+
+          if (discoverProjects.length > 0) {
+            await warden.discoverAndEnqueue(discoverProjects);
+          }
+
           await warden.tick();
         } catch {
           // Warden tick failed - will retry next interval

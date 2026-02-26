@@ -84,3 +84,6 @@ warden:
     maxCpuLoad: 0.85
     minFreeDiskGB: 10
   tickIntervalMs: 30000
+  autoDiscover:
+    enabled: true
+    maxPerProject: 20

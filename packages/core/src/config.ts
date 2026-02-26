@@ -100,11 +100,18 @@ const WardenPriorityWeightsSchema = z.object({
   resourceCost: z.number().default(1.0),
 });
 
+const WardenAutoDiscoverSchema = z.object({
+  enabled: z.boolean().default(true),
+  labels: z.array(z.string()).optional(),
+  maxPerProject: z.number().default(20),
+});
+
 const WardenConfigSchema = z.object({
   maxConcurrentSessions: z.number().default(3),
   resourceThresholds: WardenResourceThresholdsSchema.default({}),
   priorityWeights: WardenPriorityWeightsSchema.default({}),
   tickIntervalMs: z.number().default(30_000),
+  autoDiscover: WardenAutoDiscoverSchema.default({}),
 });
 
 const OrchestratorConfigSchema = z.object({

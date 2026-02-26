@@ -115,6 +115,15 @@ export interface WardenConfig {
   };
   /** How often the warden tick runs in ms (default: 30000) */
   tickIntervalMs: number;
+  /** Auto-discover open issues from tracker and enqueue them */
+  autoDiscover?: {
+    /** Whether auto-discovery is enabled (default: true when warden is configured) */
+    enabled: boolean;
+    /** Issue labels to filter by (empty = all open issues) */
+    labels?: string[];
+    /** Max issues to fetch per project per tick (default: 20) */
+    maxPerProject?: number;
+  };
 }
 
 // =============================================================================
@@ -143,6 +152,15 @@ export interface Warden {
   markCompleted(sessionId: string): void;
   /** Mark a session as failed/killed (called by lifecycle manager). */
   markFailed(sessionId: string): void;
+  /** Auto-discover open issues and enqueue them. Called by lifecycle tick. */
+  discoverAndEnqueue(projects: DiscoverProject[]): Promise<number>;
+}
+
+/** Input for auto-discovery — project + its tracker */
+export interface DiscoverProject {
+  projectId: string;
+  listIssues: (filters: { state: string; labels?: string[]; limit?: number }) => Promise<Array<{ id: string; title: string; labels: string[]; priority?: number }>>;
+  activeIssueIds: Set<string>;
 }
 
 /** Default warden config values */
@@ -159,4 +177,8 @@ export const WARDEN_DEFAULTS: WardenConfig = {
     resourceCost: 1.0,
   },
   tickIntervalMs: 30_000,
+  autoDiscover: {
+    enabled: true,
+    maxPerProject: 20,
+  },
 };

@@ -19,6 +19,7 @@ import type {
   QueueInput,
   QueuePriority,
   ResourceStatus,
+  DiscoverProject,
 } from "./warden-types.js";
 import { WARDEN_DEFAULTS } from "./warden-types.js";
 import type { ResourceMonitor } from "./resource-monitor.js";
@@ -233,6 +234,67 @@ export function createWarden(deps: WardenDeps): Warden {
       if (item) {
         item.status = "completed"; // Mark as done so it doesn't re-queue
       }
+    },
+
+    async discoverAndEnqueue(projects: DiscoverProject[]): Promise<number> {
+      if (!config.autoDiscover?.enabled) return 0;
+
+      let enqueued = 0;
+      const labels = config.autoDiscover.labels;
+      const limit = config.autoDiscover.maxPerProject ?? 20;
+
+      // Track all issue IDs already in the queue (any status except cancelled)
+      const queuedIssueIds = new Set(
+        queue
+          .filter((i) => i.status !== "cancelled")
+          .map((i) => i.issueId)
+          .filter(Boolean),
+      );
+
+      for (const project of projects) {
+        try {
+          const issues = await project.listIssues({
+            state: "open",
+            labels,
+            limit,
+          });
+
+          for (const issue of issues) {
+            const issueId = issue.id;
+
+            // Skip if already queued or has an active session
+            if (queuedIssueIds.has(issueId)) continue;
+            if (project.activeIssueIds.has(issueId)) continue;
+
+            // Map issue priority (1-4) to queue priority
+            let priority: QueuePriority = "normal";
+            if (issue.priority !== undefined) {
+              if (issue.priority <= 1) priority = "urgent";
+              else if (issue.priority === 2) priority = "high";
+              else if (issue.priority >= 4) priority = "low";
+            }
+
+            // Check labels for priority hints
+            const labelNames = issue.labels.map((l) => l.toLowerCase());
+            if (labelNames.includes("urgent") || labelNames.includes("critical")) priority = "urgent";
+            else if (labelNames.includes("high") || labelNames.includes("priority")) priority = "high";
+            else if (labelNames.includes("low") || labelNames.includes("backlog")) priority = "low";
+
+            this.enqueue({
+              projectId: project.projectId,
+              issueId,
+              priority,
+            });
+
+            queuedIssueIds.add(issueId);
+            enqueued++;
+          }
+        } catch {
+          // Tracker fetch failed for this project — skip, retry next tick
+        }
+      }
+
+      return enqueued;
     },
   };
 }
